@@ -36,7 +36,7 @@ def _render(command):
     rendered = command.scpi
     for parameter in command.parameters:
         value = parameter.range[0] if parameter.range else "x"
-        if "WRITE DO" in rendered:
+        if parameter.type == "integer":
             value = int(value)
         rendered = rendered.replace("{" + parameter.name + "}", str(value))
     return rendered

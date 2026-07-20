@@ -29,6 +29,14 @@ commands:
     description: "Read configured analog input ai0."
     polling_safe: true
     returns: {type: "float", unit: "V"}
+  acquire_ai0:
+    scpi: "ACQUIRE ai0 {samples} {rate_hz}"
+    type: "query"
+    description: "Acquire a finite buffered ai0 waveform as an NPZ artifact."
+    parameters:
+      - {name: "samples", type: "integer", range: [1, 1000000]}
+      - {name: "rate_hz", type: "float", range: [1, 250000], unit: "Hz"}
+    returns: {type: "string"}
   read_di0:
     scpi: "READ DI port0/line0"
     type: "query"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
+import json
 
 import pytest
 from lab_executor.backends import InstrumentBackend
@@ -19,6 +21,8 @@ OUTPUT_CONFIG = {
         "model": "USB-6009",
         "interlock": {"line": "port0/line7", "require": 1},
         "analog_inputs": {"ai0": {"range": [-10, 10]}},
+        "artifact_dir": ".",
+        "max_samples": 1000,
         "analog_outputs": {"ao0": {"range": [1, 4], "safe_value": 1.5}},
         "digital_outputs": {"port1/line0": {"safe_value": 0}},
     }
@@ -53,6 +57,71 @@ async def test_query_and_write_reject_wrong_command_kind():
         await backend.query(DEFAULT_MOCK_RESOURCE, "SAFE")
     with pytest.raises(NiDaqWriteRejected):
         await backend.write(DEFAULT_MOCK_RESOURCE, "READ AI ai0")
+    with pytest.raises(NiDaqWriteRejected):
+        await backend.write(DEFAULT_MOCK_RESOURCE, "ACQUIRE ai0 10 1000")
+    with pytest.raises(NiDaqReadRejected):
+        await backend.query(DEFAULT_MOCK_RESOURCE, "WRITE DO port1/line0 0")
+
+
+@pytest.mark.asyncio
+async def test_mock_acquisition_writes_valid_artifact(tmp_path):
+    import numpy as np
+    from lab_executor.artifact import parse_artifact_reference
+
+    devices = {
+        "Dev2": {
+            "model": "USB-6009",
+            "interlock": "none",
+            "analog_inputs": {"ai0": {"range": [-10, 10]}},
+            "artifact_dir": str(tmp_path),
+            "max_samples": 100,
+        }
+    }
+    backend = MockNiDaqBackend(devices)
+    result = await backend.query(DEFAULT_MOCK_RESOURCE, "ACQUIRE ai0 10 1000")
+    reference = parse_artifact_reference(result)
+    assert reference is not None
+    path = tmp_path / reference.name
+    contents = path.read_bytes()
+    assert reference.sha256 == hashlib.sha256(contents).hexdigest()
+    assert reference.bytes == len(contents)
+    assert reference.shape == [10, 1]
+    with np.load(path) as artifact:
+        assert artifact["samples"].shape == (10, 1)
+        meta = json.loads(artifact["meta"].item())
+    assert meta["device"] == "Dev2"
+    assert meta["model"] == "USB-6009"
+    assert meta["channel"] == "ai0"
+    assert meta["samples"] == 10
+    assert meta["rate_hz"] == 1000.0
+    assert meta["unit"] == "V"
+    assert meta["range"] == [-10.0, 10.0]
+    assert backend.task_constructions == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "match"),
+    [
+        ("ACQUIRE ai1 10 1000", "not configured"),
+        ("ACQUIRE ai0 101 1000", "max_samples"),
+        ("ACQUIRE ai0 10 48001", "maximum AI rate"),
+    ],
+)
+async def test_acquisition_limits_fail_before_task_creation(tmp_path, command, match):
+    devices = {
+        "Dev2": {
+            "model": "USB-6009",
+            "interlock": "none",
+            "analog_inputs": {"ai0": {"range": [-10, 10]}},
+            "artifact_dir": str(tmp_path),
+            "max_samples": 100,
+        }
+    }
+    backend = MockNiDaqBackend(devices)
+    with pytest.raises(NiDaqBackendError, match=match):
+        await backend.query(DEFAULT_MOCK_RESOURCE, command)
+    assert backend.task_constructions == 0
 
 
 @pytest.mark.asyncio

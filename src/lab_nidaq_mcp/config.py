@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+from pathlib import Path
 from typing import Any
 
 from lab_nidaq_mcp.resource import parse_resource_name
@@ -58,6 +59,9 @@ class DeviceConfig:
     analog_outputs: dict[str, AnalogOutput]
     digital_outputs: dict[str, DigitalOutput]
     physical_ao_range: tuple[float, float] | None
+    artifact_dir: Path | None
+    max_samples: int | None
+    maximum_ai_rate: float
 
 
 _CAPABILITIES = {
@@ -67,6 +71,7 @@ _CAPABILITIES = {
         "di": {f"port0/line{i}" for i in range(4)},
         "do": {f"port1/line{i}" for i in range(4)},
         "ao_range": None,
+        "maximum_ai_rate": 250000.0,
     },
     "USB-6009": {
         "ai": range(8),
@@ -80,6 +85,7 @@ _CAPABILITIES = {
             *(f"port1/line{i}" for i in range(4)),
         },
         "ao_range": (0.0, 5.0),
+        "maximum_ai_rate": 48000.0,
     },
 }
 
@@ -126,6 +132,8 @@ def load_devices_config(value: Any) -> dict[str, DeviceConfig]:
                 "analog_inputs",
                 "analog_outputs",
                 "digital_outputs",
+                "artifact_dir",
+                "max_samples",
             },
             f"device {device}",
         )
@@ -165,6 +173,28 @@ def load_devices_config(value: Any) -> dict[str, DeviceConfig]:
             if set(item) != {"range"}:
                 raise NiDaqConfigError(f"{channel} must declare range")
             inputs[channel] = AnalogInput(*_range(item["range"], channel))
+        artifact_dir_raw = raw.get("artifact_dir")
+        if artifact_dir_raw is None:
+            artifact_dir = None
+        elif not isinstance(artifact_dir_raw, str) or not artifact_dir_raw:
+            raise NiDaqConfigError("artifact_dir must be a non-empty path string")
+        else:
+            artifact_dir = Path(artifact_dir_raw)
+        max_samples_raw = raw.get("max_samples")
+        if max_samples_raw is None:
+            max_samples = None
+        elif (
+            isinstance(max_samples_raw, bool)
+            or not isinstance(max_samples_raw, int)
+            or max_samples_raw <= 0
+        ):
+            raise NiDaqConfigError("max_samples must be a positive integer")
+        else:
+            max_samples = max_samples_raw
+        if inputs and artifact_dir is None:
+            raise NiDaqConfigError("analog inputs require artifact_dir")
+        if artifact_dir is not None and max_samples is None:
+            raise NiDaqConfigError("artifact_dir requires max_samples")
         outputs: dict[str, AnalogOutput] = {}
         for channel, item_value in _mapping(
             raw.get("analog_outputs"), "analog_outputs"
@@ -219,6 +249,9 @@ def load_devices_config(value: Any) -> dict[str, DeviceConfig]:
             outputs,
             digital,
             caps["ao_range"],
+            artifact_dir,
+            max_samples,
+            caps["maximum_ai_rate"],
         )
     return result
 

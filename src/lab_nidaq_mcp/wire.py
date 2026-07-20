@@ -22,14 +22,17 @@ class NiDaqWireError(ValueError):
 class WireCommand:
     """One validated NI-DAQ single-point operation."""
 
-    opcode: Literal["READ_AI", "READ_DI", "INFO", "WRITE_AO", "WRITE_DO", "SAFE"]
+    opcode: Literal[
+        "READ_AI", "READ_DI", "ACQUIRE", "INFO", "WRITE_AO", "WRITE_DO", "SAFE"
+    ]
     target: str | None = None
     value: float | int | None = None
+    rate_hz: float | None = None
 
     @property
     def is_read(self) -> bool:
         """Whether the command belongs to the query half of the grammar."""
-        return self.opcode in {"READ_AI", "READ_DI", "INFO"}
+        return self.opcode in {"READ_AI", "READ_DI", "ACQUIRE", "INFO"}
 
 
 def _tokens(command: str) -> list[str]:
@@ -59,6 +62,23 @@ def parse_wire_command(command: str) -> WireCommand:
         return WireCommand("READ_AI", parts[2])
     if len(parts) == 3 and parts[:2] == ["READ", "DI"] and _LINE_RE.fullmatch(parts[2]):
         return WireCommand("READ_DI", parts[2])
+    if (
+        len(parts) == 4
+        and parts[0] == "ACQUIRE"
+        and _CHANNEL_RE.fullmatch(parts[1])
+        and parts[1].startswith("ai")
+    ):
+        if re.fullmatch(r"[0-9]+", parts[2]) is None:
+            raise NiDaqWireError("sample count must be a positive integer")
+        samples = int(parts[2])
+        if samples <= 0:
+            raise NiDaqWireError("sample count must be positive")
+        if _NUMBER_RE.fullmatch(parts[3]) is None:
+            raise NiDaqWireError("sample rate must be a finite positive number")
+        rate_hz = float(parts[3])
+        if not math.isfinite(rate_hz) or rate_hz <= 0:
+            raise NiDaqWireError("sample rate must be finite and positive")
+        return WireCommand("ACQUIRE", parts[1], samples, rate_hz)
     if (
         len(parts) == 4
         and parts[:2] == ["WRITE", "AO"]

@@ -37,7 +37,8 @@ def test_non_string_resource_is_rejected():
 
 
 @pytest.mark.parametrize(
-    "command", ["READ AI ai0", "READ DI port0/line7", "INFO model"]
+    "command",
+    ["READ AI ai0", "READ DI port0/line7", "INFO model", "ACQUIRE ai0 10 250000"],
 )
 def test_query_commands_parse_as_reads(command):
     assert parse_wire_command(command).is_read
@@ -79,6 +80,23 @@ def test_write_commands_parse_as_writes(command):
         "READ AI ai0\n",
         "*IDN?",
         "CONF",
+        "ACQUIRE",
+        "ACQUIRE ai0",
+        "ACQUIRE ai0 1",
+        "ACQUIRE ai0 0 1",
+        "ACQUIRE ai0 -1 1",
+        "ACQUIRE ai0 1.0 1",
+        "ACQUIRE ai0 1 0",
+        "ACQUIRE ai0 1 -1",
+        "ACQUIRE ai0 1 nan",
+        "ACQUIRE ai0 1 inf",
+        "ACQUIRE ao0 1 1",
+        "ACQUIRE ai0 1 1 extra",
+        "ACQUIRE  ai0 1 1",
+        "ACQUIRE ai0  1 1",
+        "ACQUIRE ai0 1  1",
+        " ACQUIRE ai0 1 1",
+        "ACQUIRE ai0 1 1 ",
     ],
 )
 def test_malformed_commands_are_rejected(command):

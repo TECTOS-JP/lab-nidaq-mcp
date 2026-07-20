@@ -48,6 +48,30 @@ lab-nidaq --config nidaq.yaml
 
 The entry point is `lab_executor.backends: nidaq`, with routing prefix `DAQ::`.
 
+## Measured hardware limits
+
+The capability table's maximum sample rate is the device's specified figure.
+It is not a guarantee that a given host can sustain it, and this backend does
+not pretend otherwise: a rate the hardware cannot keep up with surfaces as a
+transport error carrying DAQmx's own diagnosis, rather than silently returning
+short or duplicated data.
+
+Measured on this hardware on 2026-07-20:
+
+- **USB-6210 at 250 kS/s** — 10,000 samples acquired without error.
+- **USB-6009 at its specified 48 kS/s maximum** — DAQmx reports
+  `Onboard device memory overflow` (`-200361`). The device has little onboard
+  memory and transfers over interrupts, so the specified maximum is not
+  reachable for buffered reads on this host. 10 kS/s was reliable.
+
+An unconnected differential input rails rather than reading zero. A USB-6210
+input with nothing attached returned a constant 10.974836 V across all 10,000
+samples, while a USB-6009 single-ended input on the same code path returned
+genuine ADC noise (9 distinct values, σ≈2.2 mV). Constant data from an
+acquisition usually means the terminal is floating, not that acquisition
+failed; bias unused differential inputs to AI GND if you need a meaningful
+reading.
+
 ## Development
 
 Tests use only `MockNiDaqBackend`; they never construct a DAQmx task. Run:

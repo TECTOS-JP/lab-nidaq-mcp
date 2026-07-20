@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
     "lab-executor-mcp>=2.35.0,<3.0.0",
     "nidaqmx>=1.0",
+    "numpy>=1.24",
     "PyYAML>=6.0",
 ]
 

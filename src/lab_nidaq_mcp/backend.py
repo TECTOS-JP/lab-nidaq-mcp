@@ -7,6 +7,10 @@ interlock, and range checks all complete before a hook can create a task.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
+import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 from lab_nidaq_mcp.config import DeviceConfig, load_devices_config
@@ -78,6 +82,36 @@ class NiDaqBackend:
         if parsed.opcode == "INFO":
             return self._info(config, parsed.target)
         assert parsed.target is not None
+        if parsed.opcode == "ACQUIRE":
+            channel = config.analog_inputs.get(parsed.target)
+            if channel is None:
+                raise NiDaqBackendError(
+                    f"analog input is not configured: {parsed.target!r}"
+                )
+            assert isinstance(parsed.value, int) and parsed.rate_hz is not None
+            assert config.artifact_dir is not None and config.max_samples is not None
+            if parsed.value > config.max_samples:
+                raise NiDaqBackendError("sample count exceeds configured max_samples")
+            if parsed.rate_hz > config.maximum_ai_rate:
+                raise NiDaqBackendError(
+                    "sample rate exceeds the device maximum AI rate"
+                )
+            try:
+                self._ensure_model(resource.device, config)
+                return self._acquire_analog(
+                    resource.device,
+                    config.model,
+                    parsed.target,
+                    channel.minimum,
+                    channel.maximum,
+                    parsed.value,
+                    parsed.rate_hz,
+                    config.artifact_dir,
+                )
+            except Exception as exc:
+                if isinstance(exc, NiDaqBackendError):
+                    raise
+                raise NiDaqTransportError(f"analog acquisition failed: {exc}") from exc
         if parsed.opcode == "READ_AI":
             channel = config.analog_inputs.get(parsed.target)
             if channel is None:
@@ -248,6 +282,84 @@ class NiDaqBackend:
         with nidaqmx.Task() as task:
             task.di_channels.add_di_chan(f"{device}/{line}")
             return bool(task.read())
+
+    def _acquire_analog(
+        self,
+        device: str,
+        model: str,
+        channel: str,
+        minimum: float,
+        maximum: float,
+        samples: int,
+        rate_hz: float,
+        artifact_dir: Path,
+    ) -> str:
+        import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+
+        with nidaqmx.Task() as task:
+            task.ai_channels.add_ai_voltage_chan(
+                f"{device}/{channel}", min_val=minimum, max_val=maximum
+            )
+            task.timing.cfg_samp_clk_timing(
+                rate_hz, sample_mode=AcquisitionType.FINITE, samps_per_chan=samples
+            )
+            acquired = task.read(number_of_samples_per_channel=samples)
+        return self._write_acquisition_artifact(
+            acquired,
+            device,
+            model,
+            channel,
+            minimum,
+            maximum,
+            samples,
+            rate_hz,
+            artifact_dir,
+        )
+
+    @staticmethod
+    def _write_acquisition_artifact(
+        acquired: Any,
+        device: str,
+        model: str,
+        channel: str,
+        minimum: float,
+        maximum: float,
+        samples: int,
+        rate_hz: float,
+        artifact_dir: Path,
+    ) -> str:
+        import numpy as np
+
+        acquired_at = datetime.now(timezone.utc)
+        array = np.asarray(acquired, dtype=float).reshape(samples, 1)
+        meta = {
+            "device": device,
+            "model": model,
+            "channel": channel,
+            "samples": samples,
+            "rate_hz": rate_hz,
+            "unit": "V",
+            "acquired_at": acquired_at.isoformat(),
+            "range": [minimum, maximum],
+        }
+        name = f"acq-{acquired_at.strftime('%Y%m%dT%H%M%S.%fZ')}-{device}-{channel}.npz"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        path = artifact_dir / name
+        np.savez_compressed(path, samples=array, meta=np.asarray(json.dumps(meta)))
+        contents = path.read_bytes()
+        return json.dumps(
+            {
+                "artifact": "v1",
+                "name": name,
+                "sha256": hashlib.sha256(contents).hexdigest(),
+                "bytes": len(contents),
+                "shape": list(array.shape),
+                "rate_hz": rate_hz,
+                "unit": "V",
+            },
+            separators=(",", ":"),
+        )
 
     def _write_analog(
         self,
