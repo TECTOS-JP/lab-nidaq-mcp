@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-07-20
 
-- Add the working Echo backend example, strict resource and wire parsers, and mock backend.
-- Add BEF, routing, CLI, packaging, instrument-definition, and safety tests.
-- Add CI, Trusted Publishing, and template replacement documentation.
+- Replace the template Echo backend with a fail-closed NI-DAQmx backend.
+- Add explicit output opt-in, mandatory safe values, interlock enforcement,
+  pre-task analog range checks, `SAFE`, and safe idempotent close behavior.
+- Add experimental USB-6009 and USB-6210 instrument definitions.

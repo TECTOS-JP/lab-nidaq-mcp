@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+import pytest
+
+from lab_nidaq_mcp.config import NiDaqConfigError, load_devices_config
+
+
+def base():
+    return {
+        "Dev2": {
+            "model": "USB-6009",
+            "interlock": "none",
+            "analog_outputs": {"ao0": {"range": [0, 5], "safe_value": 1.0}},
+            "digital_outputs": {"port1/line0": {"safe_value": 0}},
+        }
+    }
+
+
+def test_valid_config_preserves_explicit_zero_safe_value():
+    config = load_devices_config(base())["Dev2"]
+    assert config.digital_outputs["port1/line0"].safe_value == 0
+
+
+def test_missing_safe_value_is_rejected_not_defaulted():
+    data = base()
+    del data["Dev2"]["analog_outputs"]["ao0"]["safe_value"]
+    with pytest.raises(NiDaqConfigError, match="safe_value"):
+        load_devices_config(data)
+
+
+def test_missing_interlock_is_rejected():
+    with pytest.raises(NiDaqConfigError, match="interlock"):
+        load_devices_config({"Dev2": {"model": "USB-6009"}})
+
+
+def test_missing_model_is_rejected():
+    with pytest.raises(NiDaqConfigError, match="model"):
+        load_devices_config({"RenamedDevice": {"interlock": "none"}})
+
+
+def test_interlock_line_cannot_be_an_output():
+    data = base()
+    data["Dev2"]["interlock"] = {"line": "port1/line0", "require": 1}
+    with pytest.raises(NiDaqConfigError, match="interlock line"):
+        load_devices_config(data)
+
+
+def test_ao_range_outside_physical_range_is_rejected():
+    data = base()
+    data["Dev2"]["analog_outputs"]["ao0"]["range"] = [-1, 5]
+    with pytest.raises(NiDaqConfigError, match="physical"):
+        load_devices_config(data)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {
+            "Dev1": {
+                "model": "USB-6210",
+                "interlock": "none",
+                "analog_outputs": {"ao0": {"range": [0, 5], "safe_value": 0}},
+            }
+        },
+        {"Dev2": {"model": "USB-6009", "interlock": None}},
+        {"Dev2": {"model": "USB-6009", "interlock": {"line": "port0/line0"}}},
+        {
+            "Dev2": {
+                "model": "USB-6009",
+                "interlock": "none",
+                "digital_outputs": {"port0/line0": {}},
+            }
+        },
+    ],
+)
+def test_other_incomplete_or_impossible_configs_fail_closed(mutation):
+    with pytest.raises((NiDaqConfigError, TypeError, ValueError)):
+        load_devices_config(mutation)

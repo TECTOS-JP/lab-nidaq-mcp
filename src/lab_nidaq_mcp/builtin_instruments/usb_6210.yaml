@@ -1,0 +1,52 @@
+# NI USB-6210 software-timed single-point definition. This measured device has
+# no analog output channels; consequently this definition has no AO command.
+metadata:
+  manufacturer: "National Instruments"
+  model: "USB-6210"
+  category: "daq"
+  description: >-
+    Multifunction DAQ for single-point analog input and digital input/output.
+    The installer must wire external circuitry so a high-impedance output is
+    safe; software cannot guarantee output state after host or USB power loss.
+  manual_ref: "NI USB-621x User Manual"
+  support_level: "experimental"
+  tested_interfaces: ["USB"]
+  tested_firmware: ""
+  definition_version: "0.1.0"
+connection:
+  default_timeout_ms: 5000
+  read_termination: ""
+  write_termination: ""
+commands:
+  identify:
+    scpi: "INFO model"
+    type: "query"
+    description: "Return the configured model."
+    returns: {type: "string"}
+  read_ai0:
+    scpi: "READ AI ai0"
+    type: "query"
+    description: "Read configured analog input ai0."
+    polling_safe: true
+    returns: {type: "float", unit: "V"}
+  read_di0:
+    scpi: "READ DI port0/line0"
+    type: "query"
+    description: "Read digital input port0/line0."
+    polling_safe: true
+    returns: {type: "integer"}
+  write_do0:
+    scpi: "WRITE DO port1/line0 {value}"
+    type: "write"
+    description: "Write declared digital line port1/line0."
+    parameters:
+      - {name: "value", type: "integer", range: [0, 1]}
+  safe:
+    scpi: "SAFE"
+    type: "write"
+    description: "Drive every declared output to its explicitly configured safe value."
+    parameters: []
+state_query:
+  ai0: {command: "read_ai0", unit: "V"}
+safe_shutdown:
+  - command: "safe"

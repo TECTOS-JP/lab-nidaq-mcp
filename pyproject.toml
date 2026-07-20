@@ -3,22 +3,19 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "lab-backend-template"
+name = "lab-nidaq-mcp"
 version = "0.1.0"
-description = "Working example backend template for lab-executor-mcp"
+description = "NI-DAQmx instrument backend for lab-executor-mcp"
 readme = "README.md"
 license = { text = "MIT" }
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-keywords = [
-    "laboratory-automation", "instrument-control", "lab-executor-mcp",
-    "backend-template", "experiment-automation",
-]
+keywords = ["laboratory-automation", "instrument-control", "lab-executor-mcp", "nidaqmx", "data-acquisition"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -27,46 +24,30 @@ classifiers = [
 ]
 dependencies = [
     "lab-executor-mcp>=2.35.0,<3.0.0",
+    "nidaqmx>=1.0",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-    "ruff>=0.8",
-    "build>=1.0",
-    "twine>=5.0",
-    "PyYAML>=6.0",
-    "tomli>=2.0; python_version < '3.11'",
-]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "ruff>=0.8", "build>=1.0", "twine>=5.0", "tomli>=2.0; python_version < '3.11'"]
 
 [project.urls]
-Homepage = "https://github.com/TECTOS-JP/lab-backend-template"
-Repository = "https://github.com/TECTOS-JP/lab-backend-template"
-Changelog = "https://github.com/TECTOS-JP/lab-backend-template/blob/main/CHANGELOG.md"
-Issues = "https://github.com/TECTOS-JP/lab-backend-template/issues"
+Homepage = "https://github.com/TECTOS-JP/lab-nidaq-mcp"
+Repository = "https://github.com/TECTOS-JP/lab-nidaq-mcp"
+Changelog = "https://github.com/TECTOS-JP/lab-nidaq-mcp/blob/main/CHANGELOG.md"
+Issues = "https://github.com/TECTOS-JP/lab-nidaq-mcp/issues"
 
 [project.entry-points."lab_executor.backends"]
-echo = "lab_backend_template.discovery:make_backend"
+nidaq = "lab_nidaq_mcp.discovery:make_backend"
 
 [project.scripts]
-lab-backend = "lab_backend_template.cli:main"
+lab-nidaq = "lab_nidaq_mcp.cli:main"
 
 [tool.hatch.build.targets.sdist]
-include = [
-    "/.gitignore",
-    "/src/lab_backend_template",
-    "/tests",
-    "/docs",
-    "/README.md",
-    "/CHANGELOG.md",
-    "/LICENSE",
-    "/pyproject.toml",
-    "/conftest.py",
-]
+include = ["/.gitignore", "/src/lab_nidaq_mcp", "/tests", "/docs", "/README.md", "/CHANGELOG.md", "/LICENSE", "/pyproject.toml", "/conftest.py"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lab_backend_template"]
+packages = ["src/lab_nidaq_mcp"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
