@@ -52,6 +52,30 @@ def test_ao_range_outside_physical_range_is_rejected():
         load_devices_config(data)
 
 
+def test_analog_inputs_require_artifact_dir():
+    data = {
+        "Dev2": {
+            "model": "USB-6009",
+            "interlock": "none",
+            "analog_inputs": {"ai0": {"range": [-10, 10]}},
+        }
+    }
+    with pytest.raises(NiDaqConfigError, match="artifact_dir"):
+        load_devices_config(data)
+
+
+def test_artifact_dir_requires_max_samples(tmp_path):
+    data = {
+        "Dev2": {
+            "model": "USB-6009",
+            "interlock": "none",
+            "artifact_dir": str(tmp_path),
+        }
+    }
+    with pytest.raises(NiDaqConfigError, match="max_samples"):
+        load_devices_config(data)
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

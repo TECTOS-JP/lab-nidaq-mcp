@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from pathlib import Path
 
 from lab_nidaq_mcp.backend import NiDaqBackend, NiDaqBackendError
 from lab_nidaq_mcp.resource import parse_resource_name
@@ -16,6 +17,8 @@ DEFAULT_MOCK_DEVICES = {
         "model": "USB-6009",
         "interlock": "none",
         "analog_inputs": {"ai0": {"range": [-10, 10]}},
+        "artifact_dir": ".",
+        "max_samples": 100000,
     }
 }
 
@@ -98,6 +101,30 @@ class MockNiDaqBackend(NiDaqBackend):
         if self.interlock_error is not None:
             raise self.interlock_error
         return bool(self.digital_values.get((device, line), 0))
+
+    def _acquire_analog(
+        self,
+        device: str,
+        model: str,
+        channel: str,
+        minimum: float,
+        maximum: float,
+        samples: int,
+        rate_hz: float,
+        artifact_dir: Path,
+    ) -> str:
+        waveform = [float(index) / rate_hz for index in range(samples)]
+        return self._write_acquisition_artifact(
+            waveform,
+            device,
+            model,
+            channel,
+            minimum,
+            maximum,
+            samples,
+            rate_hz,
+            artifact_dir,
+        )
 
     def _write_analog(
         self,

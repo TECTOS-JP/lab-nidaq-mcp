@@ -38,3 +38,17 @@ different build system merely to mask the environment omission.
 
 This supersedes the earlier notes that described capabilities as a `Dev1` /
 `Dev2` allowlist, counted four hardware hooks, and reported Hatchling missing.
+
+## 2026-07-20 finite bulk acquisition
+
+- Added strict `ACQUIRE <ai-channel> <samples> <rate_hz>` parsing and validation.
+  Declared-channel, configured sample ceiling, and model capability rate checks
+  all run before the finite DAQmx task hook.
+- Acquisition produces one compressed NPZ containing a `(samples, 1)` waveform
+  and JSON metadata, then hashes the file bytes read back from disk. Query
+  returns only the runtime's v1 artifact reference JSON.
+- NumPy is a runtime dependency and remains lazily imported in the artifact
+  writing helper reached by the hardware hook. DAQmx remains imported only in
+  hardware hooks. The mock generates a deterministic waveform and exercises
+  real NPZ output without constructing any DAQmx task.
+- The supplied virtual environment already contains NumPy 2.5.1.
