@@ -65,8 +65,19 @@ async def test_query_and_write_reject_wrong_command_kind():
 
 @pytest.mark.asyncio
 async def test_mock_acquisition_writes_valid_artifact(tmp_path):
+    """Cross-check the reference against the runtime's own parser.
+
+    ``lab_executor.artifact`` landed after the current lab-executor-mcp
+    release, so this skips when installed against a release that predates it.
+    The CI job that installs lab-executor from ``main`` still runs it, which is
+    exactly the cross-repo compatibility that job exists to cover.
+    """
     import numpy as np
-    from lab_executor.artifact import parse_artifact_reference
+
+    parse_artifact_reference = pytest.importorskip(
+        "lab_executor.artifact",
+        reason="runtime artifact ingestion is newer than the installed release",
+    ).parse_artifact_reference
 
     devices = {
         "Dev2": {
