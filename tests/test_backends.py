@@ -252,3 +252,25 @@ def test_test_suite_mock_cannot_construct_a_real_task():
     backend = MockNiDaqBackend()
     assert backend.task_constructions == 0
     assert "nidaqmx" not in inspect.getmodule(backend).__dict__
+
+
+@pytest.mark.asyncio
+async def test_acquire_without_artifact_dir_is_refused_clearly():
+    """The requirement belongs to ACQUIRE, and must say so when unmet.
+
+    Previously this was enforced at configuration load, which forced every
+    single-point user to configure waveform storage. It is now checked where it
+    actually applies, and must produce a real error rather than an assertion.
+    """
+    backend = MockNiDaqBackend(
+        {
+            "Dev2": {
+                "model": "USB-6009",
+                "interlock": "none",
+                "analog_inputs": {"ai0": {"range": [-10, 10]}},
+            }
+        }
+    )
+    assert await backend.query(DEFAULT_MOCK_RESOURCE, "READ AI ai0")
+    with pytest.raises(NiDaqBackendError, match="artifact_dir"):
+        await backend.query(DEFAULT_MOCK_RESOURCE, "ACQUIRE ai0 10 1000")

@@ -1,10 +1,16 @@
 # Changelog
 
-## 0.1.0 - 2026-07-21
+## 0.1.1 - 2026-07-21
 
 First release. Safety design was fixed before implementation began and is kept
 in `docs/SAFETY_DESIGN.md`; the implementation is not allowed to deviate from
 it.
+
+0.1.0 reached TestPyPI only. Installing it revealed that declaring an analog
+input demanded an `artifact_dir`, forcing waveform storage on users who only
+ever call `READ AI`. The requirement now belongs to `ACQUIRE`, which is the
+only command that writes an artifact, and it reports a clear error rather than
+failing an assertion.
 
 ### Backend
 

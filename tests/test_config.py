@@ -52,7 +52,13 @@ def test_ao_range_outside_physical_range_is_rejected():
         load_devices_config(data)
 
 
-def test_analog_inputs_require_artifact_dir():
+def test_analog_inputs_do_not_require_artifact_dir():
+    """Single-point reads must not demand waveform storage.
+
+    ``artifact_dir`` exists to hold an acquired waveform. Requiring it merely
+    to declare an analog input would force a directory on the ``READ AI`` user,
+    who never produces an artifact.
+    """
     data = {
         "Dev2": {
             "model": "USB-6009",
@@ -60,8 +66,10 @@ def test_analog_inputs_require_artifact_dir():
             "analog_inputs": {"ai0": {"range": [-10, 10]}},
         }
     }
-    with pytest.raises(NiDaqConfigError, match="artifact_dir"):
-        load_devices_config(data)
+    config = load_devices_config(data)["Dev2"]
+    assert "ai0" in config.analog_inputs
+    assert config.artifact_dir is None
+    assert config.max_samples is None
 
 
 def test_artifact_dir_requires_max_samples(tmp_path):

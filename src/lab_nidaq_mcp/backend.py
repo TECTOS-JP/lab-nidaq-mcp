@@ -89,7 +89,11 @@ class NiDaqBackend:
                     f"analog input is not configured: {parsed.target!r}"
                 )
             assert isinstance(parsed.value, int) and parsed.rate_hz is not None
-            assert config.artifact_dir is not None and config.max_samples is not None
+            if config.artifact_dir is None or config.max_samples is None:
+                raise NiDaqBackendError(
+                    "ACQUIRE requires artifact_dir and max_samples in this "
+                    "device's configuration; single-point READ AI needs neither"
+                )
             if parsed.value > config.max_samples:
                 raise NiDaqBackendError("sample count exceeds configured max_samples")
             if parsed.rate_hz > config.maximum_ai_rate:

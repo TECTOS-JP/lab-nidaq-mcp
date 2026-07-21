@@ -191,8 +191,10 @@ def load_devices_config(value: Any) -> dict[str, DeviceConfig]:
             raise NiDaqConfigError("max_samples must be a positive integer")
         else:
             max_samples = max_samples_raw
-        if inputs and artifact_dir is None:
-            raise NiDaqConfigError("analog inputs require artifact_dir")
+        # `artifact_dir` is only needed to write a waveform, so it is required
+        # by ACQUIRE rather than by declaring an analog input. Demanding it up
+        # front would force a directory on the single-point READ AI user, who
+        # never produces an artifact.
         if artifact_dir is not None and max_samples is None:
             raise NiDaqConfigError("artifact_dir requires max_samples")
         outputs: dict[str, AnalogOutput] = {}
