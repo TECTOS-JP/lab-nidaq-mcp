@@ -87,9 +87,14 @@ class MockNiDaqBackend(NiDaqBackend):
         )
 
     def _read_analog(
-        self, device: str, channel: str, minimum: float, maximum: float
+        self,
+        device: str,
+        channel: str,
+        minimum: float,
+        maximum: float,
+        timeout_s: float = 10.0,
     ) -> float:
-        del minimum, maximum
+        del minimum, maximum, timeout_s
         try:
             return self.analog_values[(device, channel)]
         except KeyError as exc:
@@ -112,7 +117,9 @@ class MockNiDaqBackend(NiDaqBackend):
         samples: int,
         rate_hz: float,
         artifact_dir: Path,
+        timeout_s: float = 10.0,
     ) -> str:
+        del timeout_s
         waveform = [float(index) / rate_hz for index in range(samples)]
         return self._write_acquisition_artifact(
             waveform,

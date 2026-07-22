@@ -6,6 +6,7 @@ interlock, and range checks all complete before a hook can create a task.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 import hashlib
@@ -19,6 +20,17 @@ from lab_nidaq_mcp.wire import WireCommand, parse_wire_command
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _timeout_seconds(timeout_ms: int) -> float:
+    """Convert a caller timeout into DAQmx read seconds.
+
+    DAQmx reads accept a per-read timeout; passing the caller's value makes a
+    stalled acquisition abort instead of hanging the worker thread forever.
+    A non-positive value means "no caller limit", for which DAQmx's own
+    default applies.
+    """
+    return timeout_ms / 1000 if timeout_ms and timeout_ms > 0 else 10.0
 
 
 class NiDaqBackendError(RuntimeError):
@@ -75,7 +87,8 @@ class NiDaqBackend:
         read_termination: str = "\n",
         write_termination: str = "\n",
     ) -> str:
-        del timeout_ms, read_termination, write_termination
+        del read_termination, write_termination
+        timeout_s = _timeout_seconds(timeout_ms)
         resource, config, parsed = self._validate(resource_name, command)
         if not parsed.is_read:
             raise NiDaqReadRejected("query accepts only READ and INFO commands")
@@ -101,16 +114,17 @@ class NiDaqBackend:
                     "sample rate exceeds the device maximum AI rate"
                 )
             try:
-                self._ensure_model(resource.device, config)
-                return self._acquire_analog(
+                return await asyncio.to_thread(
+                    self._acquire_checked,
                     resource.device,
-                    config.model,
+                    config,
                     parsed.target,
                     channel.minimum,
                     channel.maximum,
                     parsed.value,
                     parsed.rate_hz,
                     config.artifact_dir,
+                    timeout_s,
                 )
             except Exception as exc:
                 if isinstance(exc, NiDaqBackendError):
@@ -123,9 +137,14 @@ class NiDaqBackend:
                     f"analog input is not configured: {parsed.target!r}"
                 )
             try:
-                self._ensure_model(resource.device, config)
-                value = self._read_analog(
-                    resource.device, parsed.target, channel.minimum, channel.maximum
+                value = await asyncio.to_thread(
+                    self._read_analog_checked,
+                    resource.device,
+                    config,
+                    parsed.target,
+                    channel.minimum,
+                    channel.maximum,
+                    timeout_s,
                 )
             except Exception as exc:
                 if isinstance(exc, NiDaqBackendError):
@@ -135,8 +154,10 @@ class NiDaqBackend:
         if parsed.target not in config.digital_inputs:
             raise NiDaqBackendError(f"digital input is not physical: {parsed.target!r}")
         try:
-            self._ensure_model(resource.device, config)
-            return "1" if self._read_digital(resource.device, parsed.target) else "0"
+            bit = await asyncio.to_thread(
+                self._read_digital_checked, resource.device, config, parsed.target
+            )
+            return "1" if bit else "0"
         except Exception as exc:
             if isinstance(exc, NiDaqBackendError):
                 raise
@@ -155,7 +176,9 @@ class NiDaqBackend:
         if parsed.is_read:
             raise NiDaqWriteRejected("write accepts only WRITE and SAFE commands")
         if parsed.opcode == "SAFE":
-            self._drive_safe(resource.device, config, raise_errors=True)
+            await asyncio.to_thread(
+                self._drive_safe, resource.device, config, raise_errors=True
+            )
             return
         assert parsed.target is not None and parsed.value is not None
         if parsed.opcode == "WRITE_AO":
@@ -174,17 +197,21 @@ class NiDaqBackend:
                 raise NiDaqWriteRejected(
                     "analog output value is outside declared or physical range"
                 )
-            self._require_interlock(resource.device, config)
-            self._call_analog_write(resource.device, config, parsed.target, value)
+            await asyncio.to_thread(
+                self._write_analog_gated, resource.device, config, parsed.target, value
+            )
             return
         output = config.digital_outputs.get(parsed.target)
         if output is None:
             raise NiDaqWriteRejected(
                 f"digital output is not declared: {parsed.target!r}"
             )
-        self._require_interlock(resource.device, config)
-        self._call_digital_write(
-            resource.device, config, parsed.target, int(parsed.value)
+        await asyncio.to_thread(
+            self._write_digital_gated,
+            resource.device,
+            config,
+            parsed.target,
+            int(parsed.value),
         )
 
     @staticmethod
@@ -266,11 +293,77 @@ class NiDaqBackend:
             )
         self._verified_devices.add(device)
 
+    # --- thread-run wrappers --------------------------------------------
+    # The async query/write offload these to a worker thread via
+    # asyncio.to_thread, so a blocking DAQmx call never stalls the event loop
+    # (a long acquisition would otherwise freeze every other request). Each
+    # groups the product-type check with the leaf hook it guards.
+
+    def _read_analog_checked(
+        self,
+        device: str,
+        config: DeviceConfig,
+        channel: str,
+        minimum: float,
+        maximum: float,
+        timeout_s: float,
+    ) -> float:
+        self._ensure_model(device, config)
+        return self._read_analog(device, channel, minimum, maximum, timeout_s)
+
+    def _read_digital_checked(
+        self, device: str, config: DeviceConfig, line: str
+    ) -> bool:
+        self._ensure_model(device, config)
+        return self._read_digital(device, line)
+
+    def _acquire_checked(
+        self,
+        device: str,
+        config: DeviceConfig,
+        channel: str,
+        minimum: float,
+        maximum: float,
+        samples: int,
+        rate_hz: float,
+        artifact_dir: Path,
+        timeout_s: float,
+    ) -> str:
+        self._ensure_model(device, config)
+        return self._acquire_analog(
+            device,
+            config.model,
+            channel,
+            minimum,
+            maximum,
+            samples,
+            rate_hz,
+            artifact_dir,
+            timeout_s,
+        )
+
+    def _write_analog_gated(
+        self, device: str, config: DeviceConfig, channel: str, value: float
+    ) -> None:
+        self._require_interlock(device, config)
+        self._call_analog_write(device, config, channel, value)
+
+    def _write_digital_gated(
+        self, device: str, config: DeviceConfig, line: str, value: int
+    ) -> None:
+        self._require_interlock(device, config)
+        self._call_digital_write(device, config, line, value)
+
     # --- hardware hooks -------------------------------------------------
     # These are the only methods that import nidaqmx or create DAQmx tasks.
 
     def _read_analog(
-        self, device: str, channel: str, minimum: float, maximum: float
+        self,
+        device: str,
+        channel: str,
+        minimum: float,
+        maximum: float,
+        timeout_s: float = 10.0,
     ) -> float:
         import nidaqmx
 
@@ -278,7 +371,7 @@ class NiDaqBackend:
             task.ai_channels.add_ai_voltage_chan(
                 f"{device}/{channel}", min_val=minimum, max_val=maximum
             )
-            return float(task.read())
+            return float(task.read(timeout=timeout_s))
 
     def _read_digital(self, device: str, line: str) -> bool:
         import nidaqmx
@@ -297,10 +390,15 @@ class NiDaqBackend:
         samples: int,
         rate_hz: float,
         artifact_dir: Path,
+        timeout_s: float = 10.0,
     ) -> str:
         import nidaqmx
         from nidaqmx.constants import AcquisitionType
 
+        # The read cannot complete before the samples exist, so the DAQmx
+        # timeout must clear the acquisition duration; the caller's timeout is
+        # added as margin on top of it.
+        read_timeout = samples / rate_hz + max(timeout_s, 0.0)
         with nidaqmx.Task() as task:
             task.ai_channels.add_ai_voltage_chan(
                 f"{device}/{channel}", min_val=minimum, max_val=maximum
@@ -308,7 +406,9 @@ class NiDaqBackend:
             task.timing.cfg_samp_clk_timing(
                 rate_hz, sample_mode=AcquisitionType.FINITE, samps_per_chan=samples
             )
-            acquired = task.read(number_of_samples_per_channel=samples)
+            acquired = task.read(
+                number_of_samples_per_channel=samples, timeout=read_timeout
+            )
         return self._write_acquisition_artifact(
             acquired,
             device,
