@@ -48,21 +48,20 @@ async def test_composite_routes_daq_and_fail_closes_unmatched_resource():
         await composite.query("UNKNOWN::1", "PING")
 
 
-def test_cli_dry_run(capsys):
-    config = ROOT / ".test_nidaq_config.yaml"
-    try:
-        config.write_text(
-            "devices:\n  Dev2:\n    model: USB-6009\n    interlock: none\n",
-            "utf-8",
-            newline="\n",
-        )
-        assert main(["--config", str(config), "--dry-run"]) == 0
-        payload = json.loads(capsys.readouterr().out)
-        assert payload["backend_id"] == "nidaq"
-        assert payload["resources"] == ["DAQ::Dev2"]
-        assert {"execute_named_command", "start_recipe_job"} <= set(payload["tools"])
-    finally:
-        config.unlink(missing_ok=True)
+def test_cli_dry_run(capsys, tmp_path):
+    # A pytest tmp dir, not the repo root: a read-only checkout must still run
+    # these tests, and parallel runs must not collide on a shared file name.
+    config = tmp_path / "nidaq_config.yaml"
+    config.write_text(
+        "devices:\n  Dev2:\n    model: USB-6009\n    interlock: none\n",
+        "utf-8",
+        newline="\n",
+    )
+    assert main(["--config", str(config), "--dry-run"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["backend_id"] == "nidaq"
+    assert payload["resources"] == ["DAQ::Dev2"]
+    assert {"execute_named_command", "start_recipe_job"} <= set(payload["tools"])
 
 
 def test_cli_imports_only_two_public_lab_executor_modules():
